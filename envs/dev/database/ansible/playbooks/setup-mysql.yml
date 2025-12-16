@@ -1,0 +1,139 @@
+---
+- name: Setup mysql for application
+  hosts: mysql
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    sportsify_db_name: "sportsify"
+    sportsify_db_user: "terraform"
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+        
+    - name: Install required system packages
+      apt:
+        name:
+          - python3-pip
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Install Boto3 and Botocore
+      apt:
+        name:
+          - python3-boto3
+          - python3-botocore
+        state: present
+        update_cache: yes
+
+    - name: Get credentials from AWS Secrets Manager
+      ansible.builtin.set_fact:
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'sportsify-dev-secrets') }}"
+
+    - name: Install mysql server
+      apt:
+        name: mysql-server
+        state: present
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+        # Start and enable mysql service
+    - name: Start mysql service
+      service:
+        name: mysql
+        state: started
+        enabled: yes
+
+        # Secure mysql installation (set root password)
+    - name: Set mysql root password safely
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        state: present
+        check_implicit_admin: yes
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      ignore_errors: yes
+
+    - name: Ensure root password login works
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        state: present
+        login_user: root
+        login_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+
+
+        # Create sportsify database
+    - name: Create sportsify database
+      mysql_db:
+        login_user: root
+        login_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        name: "{{ sportsify_db_name }}"
+        state: present   
+
+        # Create sportsify user with privileges
+    - name: Create database user
+      mysql_user:
+        login_user: root
+        login_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        name: "{{ sportsify_db_user }}"
+        password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        host: localhost
+        priv: "{{ sportsify_db_name }}.*:ALL"
+        state: present
+
+         # Create posts table
+    - name: Create posts table
+      mysql_query:
+        login_user: root
+        login_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        login_db: "{{ sportsify_db_name }}"
+        query: |
+          CREATE TABLE posts (
+            id CHAR(36) NOT NULL PRIMARY KEY,
+            user_id CHAR(36) NOT NULL,
+            caption TEXT,
+            images JSON,
+            videos JSON,
+            likes_count BIGINT DEFAULT 0,
+            comments_count BIGINT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            visibility VARCHAR(20) DEFAULT 'public',
+            tags JSON
+          );
+
+   
+    # Display comprehensive completion message
+    - name: Display completion message with changes
+      debug:
+        msg: |
+          ====================================================
+          mysql setup complete!
+          
+          Configuration Summary:
+          ====================================================
+          ✅ Mysql Installation
+          
+          ✅ Mysql Service
+          
+          ✅ Root Password
+          
+          ✅ Database 
+          
+          ✅ Database User
+
+          ✅ Posts Table
+          
+          ====================================================
+          Connection Details:
+          ====================================================
+          Database: {{ sportsify_db_name }}
+          User: {{ sportsify_db_user }}
+          Password: {{ aws_secrets.MYSQL_PASSWORD }}
+          Host: localhost
