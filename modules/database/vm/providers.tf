@@ -27,12 +27,6 @@ provider "aws" {
   }
 }
 
-provider "proxmox" {
-  endpoint  = local.awsSecrets.PROXMOX_ENDPOINT
-  api_token = local.awsSecrets.PROXMOX_API_TOKEN
-  insecure  = true
-}
-
 variable "environment" {
   type = string
   default = "development"
@@ -48,3 +42,21 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+# Data Sources
+data "aws_secretsmanager_secret" "aws_secretname" {
+  name = "sportsify-dev-secrets"
+}
+
+data "aws_secretsmanager_secret_version" "secrets" {
+  secret_id = data.aws_secretsmanager_secret.aws_secretname.id
+}
+
+locals {
+  awsSecrets = jsondecode(data.aws_secretsmanager_secret_version.secrets.secret_string)
+}
+
+provider "proxmox" {
+  endpoint  = local.awsSecrets.PROXMOX_ENDPOINT
+  api_token = local.awsSecrets.PROXMOX_API_TOKEN
+  insecure  = true
+}
