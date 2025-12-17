@@ -1,4 +1,12 @@
 terraform {
+    backend "s3" {
+    bucket = "dev-tf-state-bucket-ideeqrm7"
+    key = "s3-infra/terraform.tfstate"
+    region = "us-east-1"
+    dynamodb_table = "terraform-state-lock"
+    encrypt = true
+  }
+
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
