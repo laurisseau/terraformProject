@@ -1,28 +1,12 @@
 terraform {
-    backend "s3" {
-    bucket = "dev-tf-state-bucket-ideeqrm7"
-    key = "db-infra/terraform.tfstate"
-    region = "us-east-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt = true
-  }
-
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
       version = "0.89.1"
     }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~>4.0"
-    }
     aws = {
       source = "hashicorp/aws"
       version = "~>6.26.0"
-    }
-    time = {
-      source = "hashicorp/time"
-      version = "~>0.13.1"
     }
   }
 }
@@ -55,6 +39,5 @@ locals {
 provider "proxmox" {
   endpoint  = local.awsSecrets.PROXMOX_ENDPOINT
   api_token = local.awsSecrets.PROXMOX_API_TOKEN
-  insecure  = var.proxmox_insecure
+  insecure  = true
 }
-

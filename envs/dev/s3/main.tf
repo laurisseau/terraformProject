@@ -1,43 +1,3 @@
-terraform {
-  backend "s3" {
-    bucket = "dev-tf-state-bucket-ideeqrm7"
-    key = "s3-infra/terraform.tfstate"
-    region = "us-east-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt = true
-  }
-
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-      version = "6.26.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.5"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
-# Data source to retrieve the secret
-data "aws_secretsmanager_secret" "aws_secretname" {
-  name = "sportsify-dev-secrets"
-}
-
-data "aws_secretsmanager_secret_version" "secrets" {
-  secret_id = data.aws_secretsmanager_secret.aws_secretname.id
-}
-
-locals {
-  awsSecrets = jsondecode(data.aws_secretsmanager_secret_version.secrets.secret_string)
-}
-
-provider "random" {}
-
 # Create a random string
 resource "random_string" "suffix" {
   length  = 8
@@ -85,7 +45,19 @@ resource "aws_s3_bucket_public_access_block" "dev-tf-state-bucket" {
   restrict_public_buckets = true
 }
 
-output "tf-state-s3"{
-    value = aws_s3_bucket.dev-tf-state-bucket.bucket
+
+resource "aws_s3_object" "folder_structure" {
+  for_each = toset([
+    "db-infra/",           # Will create empty folder object
+    "s3-infra/",           # Will create empty folder object  
+    "compute-infra/",
+    "vpc-infra/",
+    "sg-infra/"
+  ])
+  
+  bucket = aws_s3_bucket.dev-tf-state-bucket.bucket
+  key    = each.value
+  content = ""
 }
 
+# MAKE S3 MODULE TO CREATE A BUCKET WITH FOLDERS

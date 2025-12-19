@@ -27,24 +27,9 @@ provider "aws" {
   }
 }
 
-variable "environment" {
-  type = string
-  default = "development"
-}
-
-variable "project_name" {
-  type = string
-  default = "sportsify"
-}
-
-variable "aws_region" {
-  type = string
-  default = "us-east-1"
-}
-
 # Data Sources
 data "aws_secretsmanager_secret" "aws_secretname" {
-  name = "sportsify-dev-secrets"
+  name = var.aws_secret_name
 }
 
 data "aws_secretsmanager_secret_version" "secrets" {
