@@ -1,7 +1,7 @@
 
 # Ansible Inventory
 # Environment: ${environment}
-# Generated: ${timestamp}
+
 [all:vars]
 ansible_connection=ssh
 ansible_python_interpreter=/usr/bin/python3

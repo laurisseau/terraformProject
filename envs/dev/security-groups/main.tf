@@ -19,6 +19,7 @@ module "apply_mysql_firewall" {
   environment          = var.environment
   aws_region           = var.aws_region
   aws_secret_name      = var.aws_secret_name
+  iface                = "net0"
 }
 
 module "apply_dynamodb_firewall" {
@@ -30,4 +31,5 @@ module "apply_dynamodb_firewall" {
   environment          = var.environment
   aws_region           = var.aws_region
   aws_secret_name      = var.aws_secret_name
+  iface                = "net0"
 }

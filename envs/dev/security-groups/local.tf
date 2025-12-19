@@ -60,6 +60,21 @@ locals {
       comment = "MySQL port"
       source  = "192.168.1.0/24"
       dport   = "3306"
+    },
+    {
+      type    = "in"
+      action  = "ACCEPT"
+      comment = "SSH access"
+      source  = "192.168.1.0/24"
+      dport   = "22"
+      proto   = "tcp"
+    },
+    {
+      type    = "in"
+      action  = "DROP"
+      comment = "Default deny"
+      source  = "0.0.0.0/0"
+      proto   = "tcp"
     }
   ]
 

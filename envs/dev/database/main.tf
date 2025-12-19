@@ -44,6 +44,11 @@ module "dynamodb_vm" {
   datastore_id  = var.datastore_id
   network_bridge = var.network_bridge
   network_model = var.network_model
+
+  aws_region = var.aws_region
+  environment = var.environment
+  aws_secret_name = var.aws_secret_name
+  project_name = var.project_name
 }
 
 # MySQL VM
@@ -66,6 +71,11 @@ module "mysql_vm" {
   datastore_id  = var.datastore_id
   network_bridge = var.network_bridge
   network_model = var.network_model
+
+  aws_region = var.aws_region
+  environment = var.environment
+  aws_secret_name = var.aws_secret_name
+  project_name = var.project_name
 }
 
 resource "time_sleep" "wait_for_90s" {
@@ -85,7 +95,6 @@ resource "local_file" "ansible_inventory" {
 
   content = templatefile("${path.module}/ansible/inventories/templates/inventory.tpl", {
     environment   = var.environment
-    timestamp     = formatdate("YYYY-MM-DD hh:mm:ss", timestamp())
     dynamodb_ip   = module.dynamodb_vm.ip_address
     mysql_ip      = module.mysql_vm.ip_address
     dynamodb_user = local.vms.dynamodb.username

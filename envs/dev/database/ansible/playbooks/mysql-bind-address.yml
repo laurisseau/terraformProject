@@ -1,0 +1,17 @@
+---
+- name: Configure MySQL to listen on all interfaces
+  hosts: mysql
+  become: yes
+  
+  tasks:
+    - name: Update MySQL bind address to 0.0.0.0
+      ansible.builtin.replace:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        regexp: '^bind-address\s*=\s*127\.0\.0\.1'
+        replace: 'bind-address = 0.0.0.0'
+        backup: yes
+
+    - name: Restart MySQL service
+      ansible.builtin.service:
+        name: mysql 
+        state: restarted
