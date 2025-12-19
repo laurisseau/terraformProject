@@ -1,5 +1,3 @@
-
-
 # SSH Key Generation
 resource "tls_private_key" "dynamodb_ssh" {
   algorithm = var.ssh_key_algorithm

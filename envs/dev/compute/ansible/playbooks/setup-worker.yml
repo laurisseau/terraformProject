@@ -1,0 +1,233 @@
+---
+- name: Setup mysql for application
+  hosts: worker
+  become: yes
+  vars:
+    aws_region: "us-east-1"
+    terraform_user: "worker"
+    
+  tasks:
+    - name: Disable swap immediately
+      command: swapoff -a
+      ignore_errors: true
+      changed_when: false
+    
+    - name: Load kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - br_netfilter
+        - overlay
+    
+    - name: Configure sysctl parameters
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+        sysctl_set: yes
+      with_dict:
+        net.bridge.bridge-nf-call-ip6tables: 1
+        net.bridge.bridge-nf-call-iptables: 1
+        net.ipv4.ip_forward: 1
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Boto3, Botocore, and Python
+      apt:
+        name:
+          - python3-pip
+          - python3-boto3
+          - python3-botocore
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - containerd
+        state: present
+        update_cache: yes
+
+    - name: Get credentials from AWS Secrets Manager
+      ansible.builtin.set_fact:
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'sportsify-dev-secrets') }}"
+
+    - name: Install and setup AWS CLI v2
+      block:
+        - name: Install unzip (required for AWS CLI bundle)
+          ansible.builtin.apt:
+            name: unzip
+            state: present
+            update_cache: yes
+
+        - name: Download AWS CLI v2 installation bundle
+          ansible.builtin.get_url:
+            url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+            dest: "/tmp/awscliv2.zip"
+            mode: '0755'
+
+        - name: Unzip the AWS CLI bundle
+          ansible.builtin.unarchive:
+            src: "/tmp/awscliv2.zip"
+            dest: "/tmp"
+            remote_src: yes
+            creates: "/tmp/aws"
+
+        - name: Install AWS CLI v2
+          ansible.builtin.command:
+            cmd: /tmp/aws/install
+            creates: "/usr/local/bin/aws"
+      become: yes
+
+    - name: Create Terraform user
+      user:
+        name: "{{ terraform_user }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Configure AWS credentials directory
+      file:
+        path: "/home/{{ terraform_user }}/.aws"
+        state: directory
+        owner: "{{ terraform_user }}"
+        group: "{{ terraform_user }}"
+        mode: '0700'
+
+    - name: Create AWS credentials file
+      template:
+        src: aws_credentials.j2
+        dest: "/home/{{ terraform_user }}/.aws/credentials"
+        owner: "{{ terraform_user }}"
+        group: "{{ terraform_user }}"
+        mode: '0600'
+      when: aws_access_key is defined and aws_secret_key is defined
+
+    - name: Create AWS config file
+      copy:
+        content: |
+          [default]
+          region = {{ aws_region }}
+          output = json
+        dest: "/home/{{ terraform_user }}/.aws/config"
+        owner: "{{ terraform_user }}"
+        group: "{{ terraform_user }}"
+        mode: '0600'
+
+    - name: Create containerd config directory
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+    
+    - name: Generate default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Enable SystemdCgroup in containerd config
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '^(\s*)(SystemdCgroup\s*=\s*)false'
+        line: '\1\2true'
+        backrefs: yes
+    
+    - name: Configure containerd to use systemd cgroup driver
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: '(sandbox_image = ").*(")'
+        replace: '\1registry.k8s.io/pause:3.9\2'
+    
+    - name: Restart and enable containerd
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Add Kubernetes GPG key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key
+        keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        state: present
+
+    - name: Create keyrings directory if it doesn't exist
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Kubernetes APT repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.35/deb/ /"
+        filename: kubernetes
+        state: present
+        update_cache: yes
+
+    - name: Install Kubernetes components
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+
+    - name: Hold Kubernetes packages at current version
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    # ===== CONFIGURE KUBELET TO USE CONTAINERD =====
+    - name: Create kubelet systemd drop-in directory
+      file:
+        path: /etc/systemd/system/kubelet.service.d
+        state: directory
+        mode: '0755'
+    
+    - name: Configure kubelet to use containerd
+      copy:
+        dest: /etc/systemd/system/kubelet.service.d/0-containerd.conf
+        content: |
+          [Service]
+          Environment="KUBELET_EXTRA_ARGS=--container-runtime=remote --runtime-request-timeout=15m --container-runtime-endpoint=unix:///run/containerd/containerd.sock"
+        mode: '0644'
+    
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    
+    - name: Enable and start kubelet
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+    
+    # ===== VERIFICATION =====
+    - name: Verify containerd is running
+      command: systemctl status containerd
+      register: containerd_status
+      changed_when: false
+    
+    - name: Display containerd status
+      debug:
+        msg: "{{ containerd_status.stdout_lines }}"
+
+    # Display comprehensive completion message
+    - name: Display completion message with changes
+      debug:
+        msg: |
+          ====================================================
+          Worker setup complete!
+          
+          Configuration Summary:
+          ====================================================
+          ✅ ...
+          
