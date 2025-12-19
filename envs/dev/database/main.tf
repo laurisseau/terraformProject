@@ -26,7 +26,7 @@ resource "local_file" "mysql_private_key" {
 
 # DynamoDB VM
 module "dynamodb_vm" {
-  source = "../../../modules/database/vm"
+  source = "../../../modules/compute/vm"
 
   vm_name        = local.vms.dynamodb.name
   vm_ram         = "2084"
@@ -53,7 +53,7 @@ module "dynamodb_vm" {
 
 # MySQL VM
 module "mysql_vm" {
-  source = "../../../modules/database/vm"
+  source = "../../../modules/compute/vm"
 
   vm_name        = local.vms.mysql.name
   vm_ram         = "2084"
