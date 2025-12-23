@@ -7,7 +7,6 @@
     jenkins_password: "{{ aws_secrets.JENKINS_PASSWORD }}"
     jenkins_namespace: "jenkins"
     aws_region: "us-east-1"
-    terraform_user: "controller"
     jenkins_port: 32550
     jenkins_node: "{{ groups['jenkins'][0] }}"
 
@@ -15,140 +14,6 @@
     - name: Get credentials from AWS Secrets Manager
       ansible.builtin.set_fact:
         aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'sportsify-dev-secrets') }}"
-
-    - name: Install and setup AWS CLI v2
-      block:
-        - name: Install unzip (required for AWS CLI bundle)
-          ansible.builtin.apt:
-            name: unzip
-            state: present
-            update_cache: yes
-
-        - name: Download AWS CLI v2 installation bundle
-          ansible.builtin.get_url:
-            url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
-            dest: "/tmp/awscliv2.zip"
-            mode: '0755'
-
-        - name: Unzip the AWS CLI bundle
-          ansible.builtin.unarchive:
-            src: "/tmp/awscliv2.zip"
-            dest: "/tmp"
-            remote_src: yes
-            creates: "/tmp/aws"
-
-        - name: Install AWS CLI v2
-          ansible.builtin.command:
-            cmd: /tmp/aws/install
-            creates: "/usr/local/bin/aws"
-      become: yes
-
-    - name: Configure AWS credentials directory
-      file:
-        path: "/home/{{ terraform_user }}/.aws"
-        state: directory
-        owner: "{{ terraform_user }}"
-        group: "{{ terraform_user }}"
-        mode: '0700'
-
-    - name: Create AWS credentials file
-      template:
-        src: aws_credentials.j2
-        dest: "/home/{{ terraform_user }}/.aws/credentials"
-        owner: "{{ terraform_user }}"
-        group: "{{ terraform_user }}"
-        mode: '0600'
-      when: aws_access_key is defined and aws_secret_key is defined
-
-    - name: Create AWS config file
-      copy:
-        content: |
-          [default]
-          region = {{ aws_region }}
-          output = json
-        dest: "/home/{{ terraform_user }}/.aws/config"
-        owner: "{{ terraform_user }}"
-        group: "{{ terraform_user }}"
-        mode: '0600'
-
-    # 1. Install Ngrok - Using get_url instead of shell
-    - name: Download Ngrok GPG key
-      ansible.builtin.get_url:
-        url: "https://ngrok-agent.s3.amazonaws.com/ngrok.asc"
-        dest: "/etc/apt/trusted.gpg.d/ngrok.asc"
-        mode: '0644'  # GPG keys typically use 644, not 755
-        force: yes    # Always download (or use checksum if available)
-
-    - name: Add Ngrok repository
-      ansible.builtin.lineinfile:
-        path: /etc/apt/sources.list.d/ngrok.list
-        line: 'deb https://ngrok-agent.s3.amazonaws.com bookworm main'
-        create: yes
-        state: present
-
-    - name: Update apt cache and install ngrok
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-        name: ngrok
-        state: present
-
-    - name: Configure Ngrok authtoken
-      command: ngrok config add-authtoken {{ ngrok_authtoken }}
-      register: ngrok_token_result
-      changed_when: "'already saved' not in ngrok_token_result.stdout"
-      ignore_errors: yes
-
-    # 2. Create Jenkins namespace
-    - name: Create Jenkins namespace
-      kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ jenkins_namespace }}"
-        state: present
-
-    - name: Download Helm GPG key
-      ansible.builtin.get_url:
-        url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
-        dest: /tmp/helm.gpg
-        mode: '0644'
-
-
-    - name: Convert Helm GPG key to binary keyring
-      ansible.builtin.command:
-        cmd: >
-          gpg --dearmor
-          --yes
-          --output /usr/share/keyrings/helm.gpg
-          /tmp/helm.gpg
-      args:
-        creates: /usr/share/keyrings/helm.gpg
-
-    - name: Ensure Helm keyring permissions
-      ansible.builtin.file:
-        path: /usr/share/keyrings/helm.gpg
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Add Helm repository
-      ansible.builtin.lineinfile:
-        path: /etc/apt/sources.list.d/helm-stable-debian.list
-        line: 'deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main'
-        create: yes
-        state: present
-
-    - name: Update apt cache and install helm
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install Helm
-      apt:
-        name:
-          - helm
-        state: present
-        update_cache: yes
 
     # 4. Add Jenkins Helm repository
     - name: Add and Update Jenkins Helm repo
@@ -240,7 +105,7 @@
 
             serviceType: NodePort
             servicePort: 8080
-            nodePort: 32550
+            nodePort: {{ jenkins_port }}
 
             resources:
               requests:
@@ -254,6 +119,7 @@
               - kubernetes
               - workflow-aggregator
               - git
+              - github
               - configuration-as-code
               - docker-workflow
               - credentials-binding

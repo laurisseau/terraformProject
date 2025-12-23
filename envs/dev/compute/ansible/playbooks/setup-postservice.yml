@@ -1,0 +1,20 @@
+- name: Set up PostService with Ngrok
+  hosts: controller
+  become: yes
+  vars:
+    ngrok_authtoken: "{{ aws_secrets.NGROK_AUTHTOKEN }}"
+    jenkins_password: "{{ aws_secrets.JENKINS_PASSWORD }}"
+    sportsify_namespace: "sportsify"
+    aws_region: "us-east-1"
+    postservice_port: ???
+
+  tasks:
+    # 2. Create Sportsify namespace
+    - name: Create Sportsify namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ sportsify_namespace }}"
+        state: present
+    
+

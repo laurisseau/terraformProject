@@ -1,0 +1,40 @@
+- name: Set up UserService with Ngrok
+  hosts: controller
+  become: yes
+  vars:
+    ngrok_authtoken: "{{ aws_secrets.NGROK_AUTHTOKEN }}"
+    jenkins_password: "{{ aws_secrets.JENKINS_PASSWORD }}"
+    sportsify_namespace: "sportsify-ns"
+    aws_region: "us-east-1"
+    repo_url: "https://{{ github_token }}@github.com/laurisseau/userServiceChart.git"
+    repo_dest: /opt/helm-charts
+    chart_path: userservice
+    release_name: userservice
+    github_token: "{{ aws_secrets.GITHUB_FINEGRAINED_TOKEN }}"
+
+  tasks:
+    - name: Get credentials from AWS Secrets Manager
+      ansible.builtin.set_fact:
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'sportsify-dev-secrets') }}"
+
+    - name: Ensure chart directory exists
+      file:
+        path: "{{ repo_dest }}/{{ chart_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Clone Helm chart repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ repo_dest }}/{{ chart_path }}"
+        version: main
+        force: yes
+
+    - name: Install or upgrade Helm chart
+      kubernetes.core.helm:
+        name: "{{ release_name }}"
+        chart_ref: "{{ repo_dest }}/{{ chart_path }}"
+        release_namespace: "{{ sportsify_namespace }}"
+        create_namespace: true
+        wait: true
+        timeout: 600s
