@@ -1,0 +1,8 @@
+version: 3
+agent:
+  authtoken: {{ ngrok_authtoken }}
+endpoints:
+  - name: jenkins
+    url: jenkins.ngrok-free.dev
+    upstream:
+      url: {{ jenkins_port }}

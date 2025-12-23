@@ -54,6 +54,11 @@ variable "worker_vm_name" {
   type        = string
 }
 
+variable "jenkins_vm_name" {
+  description = "Name of the virtual machine"
+  type        = string
+}
+
 variable "ansible_inventory_path" {
   description = "Path to Ansible inventory"
   type        = string
@@ -76,6 +81,11 @@ variable "setup_controller_playbook" {
 
 variable "setup_worker_playbook" {
   description = "ansible playbook for mysql"
+  type        = string
+}
+
+variable "setup_jenkins_playbook" {
+  description = "ansible playbook for jenkins"
   type        = string
 }
 

@@ -1,0 +1,28 @@
+- name: Kubernetes Cluster Worker Join
+  hosts: worker
+  become: yes
+  vars:
+    master_node: "{{ groups['controller'][0] }}"
+  
+  tasks:
+    - name: Get join command from master
+      command: kubeadm token create --print-join-command
+      register: join_cmd
+      delegate_to: "{{ master_node }}"
+      run_once: yes
+    
+    - name: Join worker to cluster
+      command: "{{ join_cmd.stdout }}"
+      args:
+        creates: /etc/kubernetes/kubelet.conf
+    
+    - name: Wait for kubelet to be active
+      systemd:
+        name: kubelet
+        state: started
+      
+    - name: Verify node is joining
+      wait_for:
+        path: /etc/kubernetes/kubelet.conf
+        state: present
+        timeout: 30

@@ -15,6 +15,13 @@ output "vm_summary" {
       ssh_command = "ssh -i ${local.ssh_key_paths.worker} ${local.vms.worker.username}@${module.worker_vm.ip_address}"
       ssh_user    = local.vms.worker.username
     }
+    jenkins = {
+      name        = module.jenkins_vm.name
+      id          = module.jenkins_vm.id
+      ip_address  = module.jenkins_vm.ip_address
+      ssh_command = "ssh -i ${local.ssh_key_paths.jenkins} ${local.vms.jenkins.username}@${module.jenkins_vm.ip_address}"
+      ssh_user    = local.vms.jenkins.username
+    }
   }
 }
 
@@ -24,8 +31,10 @@ output "ssh_key_info" {
   value = {
     controller_private_key_path = local.ssh_key_paths.controller
     worker_private_key_path    = local.ssh_key_paths.worker
+    jenkins_private_key_path    = local.ssh_key_paths.jenkins
     controller_public_key       = sensitive(tls_private_key.controller_ssh.public_key_openssh)
     worker_public_key          = sensitive(tls_private_key.worker_ssh.public_key_openssh)
+    jenkins_public_key          = sensitive(tls_private_key.jenkins_ssh.public_key_openssh)
   }
   sensitive = true
 }

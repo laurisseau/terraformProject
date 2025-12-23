@@ -1,5 +1,5 @@
 ---
-- name: Setup mysql for application
+- name: Setup worker node for kubernetes cluster
   hosts: worker
   become: yes
   vars:
@@ -37,7 +37,7 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install Boto3, Botocore, and Python
+    - name: Install required apps
       apt:
         name:
           - python3-pip
@@ -48,6 +48,7 @@
           - curl
           - gnupg
           - containerd
+          - net-tools
         state: present
         update_cache: yes
 
@@ -223,11 +224,5 @@
     # Display comprehensive completion message
     - name: Display completion message with changes
       debug:
-        msg: |
-          ====================================================
-          Worker setup complete!
-          
-          Configuration Summary:
-          ====================================================
-          ✅ ...
+        msg: Worker setup complete!
           
