@@ -3,7 +3,6 @@
   become: yes
   vars:
     ngrok_authtoken: "{{ aws_secrets.NGROK_AUTHTOKEN }}"
-    jenkins_password: "{{ aws_secrets.JENKINS_PASSWORD }}"
     sportsify_namespace: "sportsify-ns"
     aws_region: "us-east-1"
     repo_url: "https://{{ github_token }}@github.com/laurisseau/userServiceChart.git"
@@ -11,11 +10,51 @@
     chart_path: userservice
     release_name: userservice
     github_token: "{{ aws_secrets.GITHUB_FINEGRAINED_TOKEN }}"
+    registry_url: "059597010299.dkr.ecr.us-east-1.amazonaws.com"
+    terraform_user: "root"
+    aws_access_key: "{{ aws_secrets.AWS_ACCESS_KEY_ID }}"
+    aws_secret_key: "{{ aws_secrets.AWS_SECRET_ACCESS_KEY }}"
 
   tasks:
     - name: Get credentials from AWS Secrets Manager
       ansible.builtin.set_fact:
         aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'sportsify-dev-secrets') }}"
+
+    - name: Get ECR login password
+      ansible.builtin.command:
+        cmd: "aws ecr get-login-password --region {{ aws_region }}"
+      register: ecr_login_password
+      changed_when: true
+      # This task runs locally on the Ansible controller if using a local connection
+      # If running on a remote host, ensure aws cli is configured there.
+
+    - name: Docker login to AWS ECR
+      community.docker.docker_login:
+        state: present
+        username: "AWS"
+        password: "{{ ecr_login_password.stdout }}"
+        registry_url: "{{ registry_url }}"
+        reauthorize: true
+
+    - name: Get ECR login password
+      ansible.builtin.command:
+        cmd: "aws ecr get-login-password --region {{ aws_region }}"
+      register: ecr_login_password
+      changed_when: true
+
+
+    - name: Create ECR image pull secret for Kubernetes (corrected)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: user-service-secret
+            namespace: "{{ sportsify_namespace }}"
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "{{ ({'auths': {registry_url: {'username': 'AWS', 'password': ecr_login_password.stdout, 'auth': ('AWS:' + ecr_login_password.stdout) | b64encode}}}) | to_json | b64encode }}"
 
     - name: Ensure chart directory exists
       file:
@@ -30,7 +69,24 @@
         version: main
         force: yes
 
-    - name: Install or upgrade Helm chart
+    - name: Check for stuck Helm releases
+      kubernetes.core.helm:
+        name: "{{ release_name }}"
+        release_namespace: "{{ sportsify_namespace }}"
+        state: absent
+      ignore_errors: yes
+      register: helm_cleanup
+    
+    - name: Force delete stuck Helm secret
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Secret
+        name: "sh.helm.release.v1.{{ release_name }}.v1"
+        namespace: "{{ sportsify_namespace }}"
+        state: absent
+      ignore_errors: yes
+    
+    - name: Install or upgrade Helm chart (after cleanup)
       kubernetes.core.helm:
         name: "{{ release_name }}"
         chart_ref: "{{ repo_dest }}/{{ chart_path }}"
@@ -38,3 +94,8 @@
         create_namespace: true
         wait: true
         timeout: 600s
+        atomic: true  # Enables auto-cleanup on failure
+        force: true
+        values:
+          userService:
+            tag: "latest"

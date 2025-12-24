@@ -4,7 +4,7 @@
   become: yes
   vars:
     aws_region: "us-east-1"
-    terraform_user: "worker"
+    terraform_user: "root"
     
   tasks:
     - name: Disable swap immediately
@@ -90,34 +90,36 @@
         create_home: yes
         state: present
 
-    - name: Configure AWS credentials directory
+    - name: Set terraform home path
+      set_fact:
+        terraform_home: "/home/{{ terraform_user }}"
+
+    - name: Create .aws directory
       file:
-        path: "/home/{{ terraform_user }}/.aws"
+        path: "~/.aws"
         state: directory
         owner: "{{ terraform_user }}"
         group: "{{ terraform_user }}"
         mode: '0700'
 
+    - name: Create AWS config file
+      template:
+        src: ../inventories/templates/aws_config.j2
+        dest: "~/.aws/config"
+        owner: "{{ terraform_user }}"
+        group: "{{ terraform_user }}"
+        mode: '0600'
+
     - name: Create AWS credentials file
       template:
-        src: aws_credentials.j2
-        dest: "/home/{{ terraform_user }}/.aws/credentials"
+        src: ../inventories/templates/aws_credentials.j2
+        dest: "~/.aws/credentials"
         owner: "{{ terraform_user }}"
         group: "{{ terraform_user }}"
         mode: '0600'
-      when: aws_access_key is defined and aws_secret_key is defined
-
-    - name: Create AWS config file
-      copy:
-        content: |
-          [default]
-          region = {{ aws_region }}
-          output = json
-        dest: "/home/{{ terraform_user }}/.aws/config"
-        owner: "{{ terraform_user }}"
-        group: "{{ terraform_user }}"
-        mode: '0600'
-
+      when:
+        - aws_access_key is defined
+        - aws_secret_key is defined
     - name: Create containerd config directory
       file:
         path: /etc/containerd

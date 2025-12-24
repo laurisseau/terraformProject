@@ -4,12 +4,55 @@
   become: yes
   vars:
     aws_region: "us-east-1"
-    terraform_user: "controller"
+    terraform_user: "root"
     pod_network_cidr: "10.244.0.0/16"  # Flannel default CIDR
     ngrok_authtoken: "{{ aws_secrets.NGROK_AUTHTOKEN }}"
     helm_repo_dest: /opt/helm-charts
     
   tasks:
+
+    - name: Download Docker GPG key
+      get_url:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        dest: "/etc/apt/keyrings/docker.asc"
+        mode: '0644'
+
+    - name: Install Docker using provided commands
+      shell: |
+        # Create Docker sources file
+        cat > /etc/apt/sources.list.d/docker.sources <<EOF
+        Types: deb
+        URIs: https://download.docker.com/linux/ubuntu
+        Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+        Components: stable
+        Signed-By: /etc/apt/keyrings/docker.asc
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Install packages
+      apt:
+        name:
+          - python3-pip
+          - python3-boto3
+          - python3-botocore
+          - python3-kubernetes
+          - python3-openshift
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - net-tools        
+          - docker-ce
+          - docker-ce-cli
+          - docker-buildx-plugin
+          - docker-compose-plugin
+          - containerd.io
+        state: present
+        update_cache: yes
+        # These options automatically handle prompts
+        dpkg_options: 'force-confdef,force-confold'
+
     - name: Disable swap immediately
       command: swapoff -a
       ignore_errors: true
@@ -34,28 +77,6 @@
         net.bridge.bridge-nf-call-ip6tables: 1
         net.bridge.bridge-nf-call-iptables: 1
         net.ipv4.ip_forward: 1
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install Boto3, Botocore, and Python
-      apt:
-        name:
-          - python3-pip
-          - python3-boto3
-          - python3-botocore
-          - python3-kubernetes
-          - python3-openshift
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-          - containerd
-          - net-tools
-        state: present
-        update_cache: yes
 
     - name: Get credentials from AWS Secrets Manager
       ansible.builtin.set_fact:
@@ -95,33 +116,36 @@
         create_home: yes
         state: present
 
-    - name: Configure AWS credentials directory
+    - name: Set terraform home path
+      set_fact:
+        terraform_home: "/home/{{ terraform_user }}"
+
+    - name: Create .aws directory
       file:
-        path: "/home/{{ terraform_user }}/.aws"
+        path: "~/.aws"
         state: directory
         owner: "{{ terraform_user }}"
         group: "{{ terraform_user }}"
         mode: '0700'
 
+    - name: Create AWS config file
+      template:
+        src: ../inventories/templates/aws_config.j2
+        dest: "~/.aws/config"
+        owner: "{{ terraform_user }}"
+        group: "{{ terraform_user }}"
+        mode: '0600'
+
     - name: Create AWS credentials file
       template:
-        src: aws_credentials.j2
-        dest: "/home/{{ terraform_user }}/.aws/credentials"
+        src: ../inventories/templates/aws_credentials.j2
+        dest: "~/.aws/credentials"
         owner: "{{ terraform_user }}"
         group: "{{ terraform_user }}"
         mode: '0600'
-      when: aws_access_key is defined and aws_secret_key is defined
-
-    - name: Create AWS config file
-      copy:
-        content: |
-          [default]
-          region = {{ aws_region }}
-          output = json
-        dest: "/home/{{ terraform_user }}/.aws/config"
-        owner: "{{ terraform_user }}"
-        group: "{{ terraform_user }}"
-        mode: '0600'
+      when:
+        - aws_access_key is defined
+        - aws_secret_key is defined
 
     # 1. Install Ngrok - Using get_url instead of shell
     - name: Download Ngrok GPG key
